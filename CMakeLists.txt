@@ -32,3 +32,16 @@ add_executable(test_fault_manager
     tests/test_fault_manager.cpp
     src/fault_manager.cpp
 )
+add_executable(test_comms
+    tests/test_comms.cpp
+    src/comms.cpp
+)
+
+add_executable(test_thermal
+    tests/test_thermal.cpp
+    src/thermal.cpp
+)
+
+add_executable(test_mode
+    tests/test_mode.cpp
+)
