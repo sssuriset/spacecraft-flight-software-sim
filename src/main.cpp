@@ -7,6 +7,7 @@
 #include "comms.h"
 #include "fault_manager.h"
 #include "scheduler.h"
+#include "mode.h"
 
 int main() {
     Power power;
@@ -15,7 +16,7 @@ int main() {
     FaultManager faultManager;
     Scheduler scheduler;
 
-    bool safeMode = false;
+    SpacecraftMode mode = SpacecraftMode::Boot;
 
     std::vector<std::string> commandQueue = {
         "REQUEST_TELEMETRY",
@@ -29,6 +30,7 @@ int main() {
     int commandIndex = 0;
 
     std::cout << "Spacecraft flight software simulator starting..." << std::endl;
+    mode = SpacecraftMode::Nominal;
 
     for (int t = 0; t <= 30; t++) {
         bool inSunlight = t < 15;
@@ -40,7 +42,7 @@ int main() {
             faultManager.checkFaults(power.getBatteryPercent(), thermal.getTemperatureC());
 
             if (faultManager.hasFault()) {
-                safeMode = true;
+                mode = SpacecraftMode::Safe;
                 thermal.setHeater(false);
 
                 std::cout << "[t=" << t << "s] FAULT DETECTED: "
@@ -72,7 +74,7 @@ int main() {
                           << "heater=" << (thermal.isHeaterOn() ? "ON" : "OFF")
                           << std::endl;
             } else if (command == Command::EnterSafeMode) {
-                safeMode = true;
+                mode = SpacecraftMode::Safe;
                 thermal.setHeater(false);
                 std::cout << "[t=" << t << "s] SYSTEM MODE: SAFE" << std::endl;
             } else if (command == Command::Invalid) {
@@ -82,7 +84,7 @@ int main() {
 
         if (scheduler.shouldRun(t, 5)) {
             std::cout << "[t=" << t << "s] STATE: "
-                      << "mode=" << (safeMode ? "SAFE" : "NOMINAL") << ", "
+                      << "mode=" << modeToString(mode) << ", "
                       << "battery=" << power.getBatteryPercent() << "%, "
                       << "voltage=" << power.getBatteryVoltage() << " V, "
                       << "temp=" << thermal.getTemperatureC() << " C, "
