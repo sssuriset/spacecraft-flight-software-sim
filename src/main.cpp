@@ -8,6 +8,8 @@
 #include "fault_manager.h"
 #include "scheduler.h"
 #include "mode.h"
+#include "telemetry.h"
+#include "telemetry_logger.h"
 
 int main() {
     Power power;
@@ -15,6 +17,7 @@ int main() {
     Comms comms;
     FaultManager faultManager;
     Scheduler scheduler;
+    TelemetryLogger telemetryLogger("telemetry_log.csv");
 
     SpacecraftMode mode = SpacecraftMode::Boot;
 
@@ -83,15 +86,27 @@ int main() {
         }
 
         if (scheduler.shouldRun(t, 5)) {
-            std::cout << "[t=" << t << "s] STATE: "
-                      << "mode=" << modeToString(mode) << ", "
-                      << "battery=" << power.getBatteryPercent() << "%, "
-                      << "voltage=" << power.getBatteryVoltage() << " V, "
-                      << "temp=" << thermal.getTemperatureC() << " C, "
-                      << "heater=" << (thermal.isHeaterOn() ? "ON" : "OFF") << ", "
-                      << "faults=" << faultManager.getFaultSummary()
-                      << std::endl;
-        }
+            TelemetryPacket packet;
+
+            packet.timeSeconds = t;
+            packet.mode = modeToString(mode);
+            packet.batteryPercent = power.getBatteryPercent();
+            packet.batteryVoltage = power.getBatteryVoltage();
+            packet.temperatureC = thermal.getTemperatureC();
+            packet.heaterOn = thermal.isHeaterOn();
+            packet.faults = faultManager.getFaultSummary();
+
+            telemetryLogger.writePacket(packet);
+
+            std::cout << "[t=" << packet.timeSeconds << "s] STATE: "
+              << "mode=" << packet.mode << ", "
+              << "battery=" << packet.batteryPercent << "%, "
+              << "voltage=" << packet.batteryVoltage << " V, "
+              << "temp=" << packet.temperatureC << " C, "
+              << "heater=" << (packet.heaterOn ? "ON" : "OFF") << ", "
+              << "faults=" << packet.faults
+              << std::endl;
+}
     }
 
     return 0;

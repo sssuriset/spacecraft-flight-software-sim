@@ -15,6 +15,7 @@ add_executable(spacecraft_sim
     src/comms.cpp
     src/fault_manager.cpp
     src/scheduler.cpp
+    src/telemetry_logger.cpp
 )
 
 add_executable(test_power
