@@ -16,3 +16,18 @@ add_executable(spacecraft_sim
     src/fault_manager.cpp
     src/scheduler.cpp
 )
+
+add_executable(test_power
+    tests/test_power.cpp
+    src/power.cpp
+)
+
+add_executable(test_scheduler
+    tests/test_scheduler.cpp
+    src/scheduler.cpp
+)
+
+add_executable(test_fault_manager
+    tests/test_fault_manager.cpp
+    src/fault_manager.cpp
+)
