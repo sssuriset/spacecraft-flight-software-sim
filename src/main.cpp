@@ -6,12 +6,14 @@
 #include "thermal.h"
 #include "comms.h"
 #include "fault_manager.h"
+#include "scheduler.h"
 
 int main() {
     Power power;
     Thermal thermal;
     Comms comms;
     FaultManager faultManager;
+    Scheduler scheduler;
 
     bool safeMode = false;
 
@@ -24,30 +26,33 @@ int main() {
         "ENTER_SAFE_MODE"
     };
 
+    int commandIndex = 0;
+
     std::cout << "Spacecraft flight software simulator starting..." << std::endl;
 
-    for (int t = 0; t <= 20; t++) {
-        bool inSunlight = t < 10;
+    for (int t = 0; t <= 30; t++) {
+        bool inSunlight = t < 15;
 
-        power.update(8.0);
-        thermal.update(inSunlight);
+        if (scheduler.shouldRun(t, 1)) {
+            power.update(8.0);
+            thermal.update(inSunlight);
 
-        faultManager.checkFaults(power.getBatteryPercent(), thermal.getTemperatureC());
+            faultManager.checkFaults(power.getBatteryPercent(), thermal.getTemperatureC());
 
-        if (faultManager.hasFault()) {
-            safeMode = true;
-            thermal.setHeater(false);
+            if (faultManager.hasFault()) {
+                safeMode = true;
+                thermal.setHeater(false);
 
-            std::cout << "[t=" << t << "s] FAULT DETECTED: "
-                      << faultManager.getFaultSummary()
-                      << std::endl;
-
-            std::cout << "[t=" << t << "s] SYSTEM MODE: SAFE" << std::endl;
+                std::cout << "[t=" << t << "s] FAULT DETECTED: "
+                          << faultManager.getFaultSummary()
+                          << std::endl;
+            }
         }
 
-        if (t < commandQueue.size()) {
-            std::string commandText = commandQueue[t];
+        if (scheduler.shouldRun(t, 2) && commandIndex < commandQueue.size()) {
+            std::string commandText = commandQueue[commandIndex];
             Command command = comms.parseCommand(commandText);
+            commandIndex++;
 
             std::cout << "[t=" << t << "s] COMMAND RECEIVED: "
                       << commandText
@@ -75,14 +80,16 @@ int main() {
             }
         }
 
-        std::cout << "[t=" << t << "s] STATE: "
-                  << "mode=" << (safeMode ? "SAFE" : "NOMINAL") << ", "
-                  << "battery=" << power.getBatteryPercent() << "%, "
-                  << "voltage=" << power.getBatteryVoltage() << " V, "
-                  << "temp=" << thermal.getTemperatureC() << " C, "
-                  << "heater=" << (thermal.isHeaterOn() ? "ON" : "OFF") << ", "
-                  << "faults=" << faultManager.getFaultSummary()
-                  << std::endl;
+        if (scheduler.shouldRun(t, 5)) {
+            std::cout << "[t=" << t << "s] STATE: "
+                      << "mode=" << (safeMode ? "SAFE" : "NOMINAL") << ", "
+                      << "battery=" << power.getBatteryPercent() << "%, "
+                      << "voltage=" << power.getBatteryVoltage() << " V, "
+                      << "temp=" << thermal.getTemperatureC() << " C, "
+                      << "heater=" << (thermal.isHeaterOn() ? "ON" : "OFF") << ", "
+                      << "faults=" << faultManager.getFaultSummary()
+                      << std::endl;
+        }
     }
 
     return 0;
