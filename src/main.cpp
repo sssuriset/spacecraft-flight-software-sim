@@ -7,7 +7,7 @@ int main() {
     std::cout << "Spacecraft flight software simulator starting..." << std::endl;
 
     for (int time = 0; time <= 10; time++) {
-        power.update(5.0);
+        power.update(8.0);
 
         std::cout << "[t=" << time << "s] "
                   << "battery=" << power.getBatteryPercent() << "%, "
