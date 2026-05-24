@@ -1,25 +1,30 @@
 #include <iostream>
-#include <vector>
 #include <string>
+#include <vector>
 
-#include "power.h"
-#include "thermal.h"
-#include "comms.h"
-#include "fault_manager.h"
 #include "scheduler.h"
-#include "mode.h"
+#include "spacecraft.h"
 #include "telemetry.h"
 #include "telemetry_logger.h"
 
+static void printTelemetry(const TelemetryPacket& packet) {
+    std::cout << "[t=" << packet.timeSeconds << "s] STATE: "
+              << "mode=" << packet.mode << ", "
+              << "battery=" << packet.batteryPercent << "%, "
+              << "voltage=" << packet.batteryVoltage << " V, "
+              << "temp=" << packet.temperatureC << " C, "
+              << "heater=" << (packet.heaterOn ? "ON" : "OFF") << ", "
+              << "faults=" << packet.faults << std::endl;
+}
+
 int main() {
-    Power power;
-    Thermal thermal;
-    Comms comms;
-    FaultManager faultManager;
+    Spacecraft spacecraft;
     Scheduler scheduler;
     TelemetryLogger telemetryLogger("telemetry_log.csv");
 
-    SpacecraftMode mode = SpacecraftMode::Boot;
+    scheduler.registerTask("environment_update", 1, 1);
+    scheduler.registerTask("command_processing", 2, 2);
+    scheduler.registerTask("telemetry_logging", 5, 3);
 
     std::vector<std::string> commandQueue = {
         "REQUEST_TELEMETRY",
@@ -27,86 +32,53 @@ int main() {
         "REQUEST_TELEMETRY",
         "SET_HEATER_OFF",
         "BAD_COMMAND",
-        "ENTER_SAFE_MODE"
+        "ENTER_SAFE_MODE",
+        "SET_HEATER_ON",
+        "REQUEST_TELEMETRY"
     };
 
     int commandIndex = 0;
 
     std::cout << "Spacecraft flight software simulator starting..." << std::endl;
-    mode = SpacecraftMode::Nominal;
+
+    spacecraft.boot();
 
     for (int t = 0; t <= 30; t++) {
         bool inSunlight = t < 15;
 
-        if (scheduler.shouldRun(t, 1)) {
-            power.update(8.0);
-            thermal.update(inSunlight);
+        if (scheduler.shouldRunTask("environment_update", t)) {
+            spacecraft.updateEnvironment(inSunlight);
 
-            faultManager.checkFaults(power.getBatteryPercent(), thermal.getTemperatureC());
-
-            if (faultManager.hasFault()) {
-                mode = SpacecraftMode::Safe;
-                thermal.setHeater(false);
-
+            if (spacecraft.getMode() == SpacecraftMode::Fault) {
                 std::cout << "[t=" << t << "s] FAULT DETECTED: "
-                          << faultManager.getFaultSummary()
-                          << std::endl;
+                          << spacecraft.getFaultSummary() << std::endl;
             }
         }
 
-        if (scheduler.shouldRun(t, 2) && commandIndex < commandQueue.size()) {
+        if (scheduler.shouldRunTask("command_processing", t) &&
+            commandIndex < static_cast<int>(commandQueue.size())) {
             std::string commandText = commandQueue[commandIndex];
-            Command command = comms.parseCommand(commandText);
             commandIndex++;
 
             std::cout << "[t=" << t << "s] COMMAND RECEIVED: "
-                      << commandText
-                      << std::endl;
+                      << commandText << std::endl;
 
-            if (command == Command::SetHeaterOn) {
-                thermal.setHeater(true);
-                std::cout << "[t=" << t << "s] HEATER STATE: ON" << std::endl;
-            } else if (command == Command::SetHeaterOff) {
-                thermal.setHeater(false);
-                std::cout << "[t=" << t << "s] HEATER STATE: OFF" << std::endl;
-            } else if (command == Command::RequestTelemetry) {
-                std::cout << "[t=" << t << "s] TELEMETRY: "
-                          << "battery=" << power.getBatteryPercent() << "%, "
-                          << "voltage=" << power.getBatteryVoltage() << " V, "
-                          << "temp=" << thermal.getTemperatureC() << " C, "
-                          << "heater=" << (thermal.isHeaterOn() ? "ON" : "OFF")
-                          << std::endl;
-            } else if (command == Command::EnterSafeMode) {
-                mode = SpacecraftMode::Safe;
-                thermal.setHeater(false);
-                std::cout << "[t=" << t << "s] SYSTEM MODE: SAFE" << std::endl;
-            } else if (command == Command::Invalid) {
-                std::cout << "[t=" << t << "s] ERROR: invalid command rejected" << std::endl;
-            }
+            std::string result = spacecraft.processCommand(commandText);
+            std::cout << "[t=" << t << "s] " << result << std::endl;
         }
 
-        if (scheduler.shouldRun(t, 5)) {
-            TelemetryPacket packet;
-
-            packet.timeSeconds = t;
-            packet.mode = modeToString(mode);
-            packet.batteryPercent = power.getBatteryPercent();
-            packet.batteryVoltage = power.getBatteryVoltage();
-            packet.temperatureC = thermal.getTemperatureC();
-            packet.heaterOn = thermal.isHeaterOn();
-            packet.faults = faultManager.getFaultSummary();
-
+        if (spacecraft.consumeImmediateTelemetryRequest()) {
+            TelemetryPacket packet = spacecraft.buildTelemetryPacket(t);
             telemetryLogger.writePacket(packet);
+            std::cout << "[t=" << t << "s] IMMEDIATE TELEMETRY" << std::endl;
+            printTelemetry(packet);
+        }
 
-            std::cout << "[t=" << packet.timeSeconds << "s] STATE: "
-              << "mode=" << packet.mode << ", "
-              << "battery=" << packet.batteryPercent << "%, "
-              << "voltage=" << packet.batteryVoltage << " V, "
-              << "temp=" << packet.temperatureC << " C, "
-              << "heater=" << (packet.heaterOn ? "ON" : "OFF") << ", "
-              << "faults=" << packet.faults
-              << std::endl;
-}
+        if (scheduler.shouldRunTask("telemetry_logging", t)) {
+            TelemetryPacket packet = spacecraft.buildTelemetryPacket(t);
+            telemetryLogger.writePacket(packet);
+            printTelemetry(packet);
+        }
     }
 
     return 0;

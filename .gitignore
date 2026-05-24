@@ -4,3 +4,7 @@ build/
 .DS_Store
 .vscode/
 telemetry_log.csv
+
+# Generated simulation output
+telemetry_log.csv
+build/

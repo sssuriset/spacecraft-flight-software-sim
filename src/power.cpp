@@ -24,6 +24,10 @@ void Power::update(double loadWatts) {
     batteryVoltage = 22.0 + (batteryPercent / 100.0) * 8.0;
 }
 
+void Power::setSolarCharging(bool state) {
+    solarCharging = state;
+}
+
 double Power::getBatteryPercent() const {
     return batteryPercent;
 }

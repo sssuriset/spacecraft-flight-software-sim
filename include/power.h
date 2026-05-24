@@ -11,6 +11,8 @@ public:
     Power();
 
     void update(double loadWatts);
+    void setSolarCharging(bool state);
+
     double getBatteryPercent() const;
     double getBatteryVoltage() const;
     bool isSolarCharging() const;
