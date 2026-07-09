@@ -1,4 +1,6 @@
+#include <fstream>
 #include <iostream>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -6,6 +8,42 @@
 #include "spacecraft.h"
 #include "telemetry.h"
 #include "telemetry_logger.h"
+
+struct TimedCommand {
+    int timeSeconds;
+    std::string text;
+};
+
+static std::vector<TimedCommand> loadCommandSequence(const std::string& path) {
+    std::vector<TimedCommand> sequence;
+    std::ifstream file(path);
+
+    if (!file.is_open()) {
+        std::cerr << "WARNING: could not open command file '" << path
+                  << "', running with no command sequence" << std::endl;
+        return sequence;
+    }
+
+    std::string line;
+
+    while (std::getline(file, line)) {
+        if (line.empty() || line[0] == '#') {
+            continue;
+        }
+
+        std::istringstream stream(line);
+        TimedCommand command;
+
+        if (stream >> command.timeSeconds >> command.text) {
+            sequence.push_back(command);
+        } else {
+            std::cerr << "WARNING: skipping malformed command line: "
+                      << line << std::endl;
+        }
+    }
+
+    return sequence;
+}
 
 static void printTelemetry(const TelemetryPacket& packet) {
     std::cout << "[t=" << packet.timeSeconds << "s] STATE: "
@@ -17,29 +55,21 @@ static void printTelemetry(const TelemetryPacket& packet) {
               << "faults=" << packet.faults << std::endl;
 }
 
-int main() {
+int main(int argc, char* argv[]) {
     Spacecraft spacecraft;
     Scheduler scheduler;
     TelemetryLogger telemetryLogger("telemetry_log.csv");
 
     scheduler.registerTask("environment_update", 1, 1);
-    scheduler.registerTask("command_processing", 2, 2);
     scheduler.registerTask("telemetry_logging", 5, 3);
 
-    std::vector<std::string> commandQueue = {
-        "REQUEST_TELEMETRY",
-        "SET_HEATER_ON",
-        "REQUEST_TELEMETRY",
-        "SET_HEATER_OFF",
-        "BAD_COMMAND",
-        "ENTER_SAFE_MODE",
-        "SET_HEATER_ON",
-        "REQUEST_TELEMETRY"
-    };
-
-    int commandIndex = 0;
+    std::string commandFilePath = argc > 1 ? argv[1] : "commands.txt";
+    std::vector<TimedCommand> commandSequence = loadCommandSequence(commandFilePath);
+    size_t commandIndex = 0;
 
     std::cout << "Spacecraft flight software simulator starting..." << std::endl;
+    std::cout << "Loaded " << commandSequence.size()
+              << " commands from " << commandFilePath << std::endl;
 
     spacecraft.boot();
 
@@ -55,9 +85,9 @@ int main() {
             }
         }
 
-        if (scheduler.shouldRunTask("command_processing", t) &&
-            commandIndex < static_cast<int>(commandQueue.size())) {
-            std::string commandText = commandQueue[commandIndex];
+        while (commandIndex < commandSequence.size() &&
+               commandSequence[commandIndex].timeSeconds <= t) {
+            const std::string& commandText = commandSequence[commandIndex].text;
             commandIndex++;
 
             std::cout << "[t=" << t << "s] COMMAND RECEIVED: "

@@ -1,125 +1,90 @@
-# Lunar Image Processing and Quality Analysis
+# Spacecraft Flight Software Simulator
 
-This project is a small Python image-processing workflow for lunar surface images. I built it to test basic ways of cleaning up and comparing lunar image products, especially contrast, brightness spread, edge visibility, and residual noise.
+[![CI](https://github.com/sssuriset/spacecraft-flight-software-sim/actions/workflows/ci.yml/badge.svg)](https://github.com/sssuriset/spacecraft-flight-software-sim/actions/workflows/ci.yml)
 
-The script reads images from `data/raw/`, processes them, and saves the results into the `outputs/` folder.
+A C++17 simulator for the software side of a small spacecraft: subsystem state, a periodic task scheduler, timestamped command processing, fault detection with protective modes, and CSV telemetry logging. Each loop iteration represents one second of spacecraft time over a 30 second scenario that includes an eclipse entry at t=15s.
 
-## What it does
+## Build and run
 
-For each image, the script creates:
+```bash
+cmake -B build
+cmake --build build
+./build/spacecraft_sim
+```
 
-- a normalized grayscale image
-- a contrast-stretched image
-- an edge map
-- a residual/noise image
-- smaller image tiles
-- a comparison plot
-- a row of image-quality metrics in a CSV file
+Run the unit tests:
 
-The goal is not to do crater detection or terrain classification. This is more of a preprocessing and quality-check project: take raw lunar images, make surface features easier to inspect, and record some basic metrics for comparison.
+```bash
+ctest --test-dir build
+```
 
-## Installation
+The simulator reads `commands.txt` from the working directory by default. A different command file can be passed as the first argument:
 
-Clone the repo:
+```bash
+./build/spacecraft_sim my_sequence.txt
+```
 
-    git clone https://github.com/sssuriset/lunar-image-processing.git
-    cd lunar-image-processing
+## Command sequences
 
-Install the dependencies:
+Commands are loaded from a text file with one timestamped command per line:
 
-    python3 -m pip install -r requirements.txt
+```text
+# <time_seconds> <command>
+0 REQUEST_TELEMETRY
+2 SET_HEATER_ON
+10 ENTER_SAFE_MODE
+12 SET_HEATER_ON
+```
 
-The main packages are:
+Blank lines and lines starting with `#` are skipped. Malformed lines are reported and skipped rather than aborting the run. Each command dispatches when simulation time reaches its timestamp.
 
-    numpy
-    matplotlib
-    pillow
-    scikit-image
+Supported commands:
 
-## How to run it
+| Command | Effect |
+|---|---|
+| `REQUEST_TELEMETRY` | Emits an immediate telemetry packet outside the periodic schedule |
+| `SET_HEATER_ON` / `SET_HEATER_OFF` | Controls the thermal subsystem heater |
+| `ENTER_SAFE_MODE` | Transitions to SAFE mode |
+| `NO_OP` | Accepted with no state change |
 
-Put one or more images in:
+Unrecognized commands are rejected with an error, and the run continues.
 
-    data/raw/
+## Subsystems
 
-Then run:
+| Module | Responsibility |
+|---|---|
+| `power` | Battery percent and voltage, solar charging when in sunlight, load draw |
+| `thermal` | Temperature model driven by sunlight state, heater control |
+| `comms` | Command string parsing into a typed command enum |
+| `fault_manager` | Threshold checks: battery < 20%, temperature > 45 C or < -5 C |
+| `scheduler` | Named periodic tasks with per-task periods and priorities |
+| `telemetry_logger` | Writes each telemetry packet as a CSV row to `telemetry_log.csv` |
+| `spacecraft` | Owns the subsystems, mode state machine, and command handling |
 
-    python3 src/process_image.py
+## Modes and fault handling
 
-Supported image types:
+The mode state machine is BOOT -> NOMINAL, with transitions into SAFE (commanded) or FAULT (detected). SAFE and FAULT are protective modes. In a protective mode the spacecraft:
 
-    .png
-    .jpg
-    .jpeg
-    .tif
-    .tiff
+- rejects actuator commands such as `SET_HEATER_ON`, while still accepting `REQUEST_TELEMETRY` and `NO_OP`
+- drops its power load from 8 W to 3 W
+- runs a survival heater rule, heater on below 0 C
+- emits an immediate telemetry packet on the transition
 
-The script saves processed images, plots, tiles, and a metrics CSV in the `outputs/` folder.
+Fault detection runs every environment update. A threshold violation latches FAULT mode and prints the active fault summary.
 
-## Processing steps
+## Telemetry
 
-### Normalization
+Telemetry packets carry time, mode, battery percent, battery voltage, temperature, heater state, and the fault summary. Packets are logged on a 5 second schedule and immediately on telemetry requests and protective mode transitions, then written to `telemetry_log.csv`.
 
-Each image is converted to grayscale and rescaled using percentile limits. I used percentile scaling instead of the absolute minimum and maximum because a few extreme pixels can make the rest of the image look flat.
+## Tests
 
-### Contrast stretching
+Each subsystem has a standalone assertion test registered with CTest: `test_power`, `test_scheduler`, `test_fault_manager`, `test_comms`, `test_thermal`, `test_mode`. CI builds the project and runs the test suite plus a full simulation with the checked-in command sequence on every push.
 
-The script stretches the useful brightness range of the image. This helps bring out crater rims, shadow boundaries, and surface texture that may be hard to see in the raw image.
+## Layout
 
-### Edge detection
-
-An edge map is created to show where sharp boundaries appear in the image. This gives a rough check of how much visible structure the image has after processing.
-
-### Residual image
-
-The script subtracts a blurred version of the image from the normalized image. This leaves smaller-scale variation behind. I use this as a simple residual/noise check, not as a calibrated noise model.
-
-The residual plot is displayed with symmetric limits so positive and negative residuals are treated evenly.
-
-### Tiling
-
-The image is split into smaller sections. Edge tiles are kept even when the image size does not divide evenly by the tile size, so the script does not silently throw away the right or bottom edge of an image.
-
-## Metrics
-
-The CSV file records:
-
-    mean
-    median
-    std
-    sharpness
-    edgeFrac
-    residStd
-    contrastRange
-    brightFrac
-    darkFrac
-
-What they mean:
-
-- `mean`: average normalized brightness
-- `median`: median normalized brightness
-- `std`: spread of pixel values
-- `sharpness`: rough sharpness estimate based on image variation
-- `edgeFrac`: fraction of pixels marked as edges
-- `residStd`: spread of the residual image
-- `contrastRange`: difference between high and low percentile brightness values
-- `brightFrac`: fraction of very bright pixels
-- `darkFrac`: fraction of very dark pixels
-
-These are simple comparison metrics. They are useful for checking image quality across a batch, but they are not calibrated lunar surface measurements.
-
-## Limitations
-
-This project uses classical image-processing methods only. It does not georeference images, match features to lunar catalogs, classify terrain, or estimate physical reflectance.
-
-The results should be treated as image-quality and preprocessing outputs, not as a full scientific analysis pipeline.
-
-## Possible upgrades
-
-Some reasonable next steps would be:
-
-- add FITS image support
-- add command-line options for tile size and contrast limits
-- add batch summary plots
-- test crater or ridge candidate detection
-- compare processed outputs against labeled lunar features
+```text
+include/   subsystem headers
+src/       subsystem implementations and main loop
+tests/     per-subsystem assertion tests
+commands.txt   default command sequence
+```

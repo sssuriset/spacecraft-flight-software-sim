@@ -10,7 +10,7 @@ The main loop is responsible for:
 
 - Updating subsystem state
 - Running scheduled tasks
-- Processing commands from `commands.txt`
+- Dispatching timestamped commands from a command file (`commands.txt` by default)
 - Checking faults
 - Writing telemetry packets
 - Printing state updates to the terminal
@@ -27,3 +27,4 @@ Thermal update: every 1 second
 Fault check: every 1 second
 Command processing: based on commands.txt timestamps
 Telemetry logging: every 5 seconds
+```
